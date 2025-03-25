@@ -1,0 +1,73 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environments
+.env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Robot Framework output
+output.xml
+report.html
+log.html
+
+# Pytest cache
+.pytest_cache/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints
+
+# OS or Editor directories
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs and temp
+logs/
+temp/
+*.log
+*.temp
+
+# Large model files
+models_saved/
+*.pth
+"models_saved/best_document_classifier.pth" 
