@@ -1,9 +1,6 @@
 """
 Belge metin çıkarma modülleri.
 """
-import pytesseract
-pytesseract.pytesseract.tesseract_cmd = "D:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-
 import os
 import time
 import threading
@@ -11,12 +8,18 @@ from queue import Queue
 from PIL import Image
 import numpy as np
 
+# Önce Tesseract yapılandırması
+import pytesseract
+# Tesseract yolunu direkt olarak belirleyin
+tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
 from config.settings import OCR_CONFIG, TEMP_DIR
 
 class UnstructuredTextExtractor:
     def __init__(self, timeout=None):
         """
-        Unstructured kütüphanesini kullanarak belgelerden metin çıkarmak için sınıf.
+        Belgelerden metin çıkarmak için sınıf.
         
         Args:
             timeout (int, optional): Metin çıkarma işlemi için maksimum süre (saniye). 
@@ -24,10 +27,15 @@ class UnstructuredTextExtractor:
         """
         print("Metin çıkarıcı başlatılıyor...")
         self.timeout = timeout or OCR_CONFIG['timeout']
+        # Tesseract yolunu kontrol et
+        if os.path.exists(tesseract_path):
+            print(f"Tesseract OCR bulundu: {tesseract_path}")
+        else:
+            print(f"UYARI: Tesseract OCR bulunamadı: {tesseract_path}")
 
     def extract_text(self, document_path):
         """
-        Unstructured kütüphanesi ile metin çıkarma işlemi.
+        Belge dosyasından metin çıkarma işlemi.
         Güvenlik için zaman aşımı ve hata yönetimi eklenmiştir.
         
         Args:
@@ -52,54 +60,85 @@ class UnstructuredTextExtractor:
                 if ext in ['.tif', '.tiff']:
                     try:
                         # TIF dosyasını PIL ile açıp geçici bir JPEG olarak kaydet
-                        from PIL import Image
                         print(f"TIF dosyası işleniyor: {document_path}")
                         img = Image.open(document_path)
 
                         # Geçici jpeg dosyası oluştur
                         temp_jpg = os.path.join(TEMP_DIR, os.path.basename(document_path) + "_temp.jpg")
-                        img.convert('RGB').save(temp_jpg)
+                        img = img.convert('RGB')
+                        img.save(temp_jpg)
                         print(f"Geçici JPEG oluşturuldu: {temp_jpg}")
 
-                        # Geçici JPEG dosyasını işle
+                        # Pytesseract ile doğrudan OCR uygula
                         try:
-                            from unstructured.partition.auto import partition
-                            from unstructured.staging.base import elements_to_text
-
-                            print("Unstructured ile ayrıştırma başlıyor...")
-                            elements = partition(temp_jpg)
-                            text = elements_to_text(elements)
-
+                            text = pytesseract.image_to_string(img)
+                            print(f"Pytesseract ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
+                            
                             # Geçici dosyayı temizle
                             try:
                                 os.remove(temp_jpg)
                             except:
                                 pass
-                        except ImportError:
-                            print("Unstructured paketi kurulu değil, OCR atlanıyor")
-                            text = "[OCR paketi bulunamadı]"
-                            elements = []
+                        except Exception as e:
+                            print(f"Pytesseract OCR hatası: {e}")
+                            # Unstructured ile dene
+                            try:
+                                from unstructured.partition.auto import partition
+                                from unstructured.staging.base import elements_to_text
+
+                                print("Unstructured ile ayrıştırma başlıyor...")
+                                elements = partition(temp_jpg)
+                                text = elements_to_text(elements)
+                                print(f"Unstructured ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
+
+                                # Geçici dosyayı temizle
+                                try:
+                                    os.remove(temp_jpg)
+                                except:
+                                    pass
+                            except ImportError:
+                                print("Unstructured paketi kurulu değil, OCR atlanıyor")
+                                text = "[OCR paketi bulunamadı]"
+                                elements = []
+                            except Exception as e:
+                                print(f"Unstructured OCR hatası: {e}")
+                                text = f"[OCR hatası: {str(e)}]"
+                                elements = []
                             
                     except Exception as e:
                         print(f"TIF işleme hatası: {e}")
                         text = f"[TIF işleme hatası: {str(e)}]"
                         elements = []
                 else:
-                    # Diğer dosya türleri için doğrudan partition kullan
+                    # Diğer dosya türleri için doğrudan işle
                     try:
-                        from unstructured.partition.auto import partition
-                        from unstructured.staging.base import elements_to_text
+                        # Önce pytesseract ile dene
+                        try:
+                            img = Image.open(document_path).convert('RGB')
+                            text = pytesseract.image_to_string(img)
+                            print(f"Pytesseract ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
+                        except Exception as e:
+                            print(f"Pytesseract OCR hatası: {e}")
+                            # Unstructured ile dene
+                            try:
+                                from unstructured.partition.auto import partition
+                                from unstructured.staging.base import elements_to_text
 
-                        print("Unstructured ile ayrıştırma başlıyor...")
-                        elements = partition(document_path)
-                        text = elements_to_text(elements)
-                    except ImportError:
-                        print("Unstructured paketi kurulu değil, OCR atlanıyor")
-                        text = "[OCR paketi bulunamadı]"
-                        elements = []
+                                print("Unstructured ile ayrıştırma başlıyor...")
+                                elements = partition(document_path)
+                                text = elements_to_text(elements)
+                                print(f"Unstructured ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
+                            except ImportError:
+                                print("Unstructured paketi kurulu değil, OCR atlanıyor")
+                                text = "[OCR paketi bulunamadı]"
+                                elements = []
+                            except Exception as e:
+                                print(f"Unstructured OCR hatası: {e}")
+                                text = f"[OCR hatası: {str(e)}]"
+                                elements = []
                     except Exception as e:
-                        print(f"Ayrıştırma hatası: {e}")
-                        text = f"[Ayrıştırma hatası: {str(e)}]"
+                        print(f"Dosya işleme hatası: {e}")
+                        text = f"[Dosya işleme hatası: {str(e)}]"
                         elements = []
 
                 # İşlem süresini kontrol et
@@ -110,7 +149,7 @@ class UnstructuredTextExtractor:
                 result_queue.put({
                     'text': text,
                     'metadata': {
-                        'num_elements': len(elements) if 'elements' in locals() else 0,
+                        'num_elements': 0,  # Şu an için önemli değil
                         'processing_time': elapsed_time,
                         'file_path': document_path
                     }

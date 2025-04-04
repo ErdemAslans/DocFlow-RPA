@@ -1,19 +1,19 @@
 # Robot Framework ve RPA Framework
-robotframework==7.2.2
-rpaframework==30.0.1
+robotframework
+rpaframework
 
 # PyTorch ve Transformer ekosistemi
-torch==2.3.0
-torchvision==0.18.0
-transformers==4.38.2
-accelerate==0.29.2
+torch
+torchvision
+transformers
+accelerate
 
 # Görüntü ve dizi işlemleri
-pillow==10.3.0
-imageio==2.33.1
+pillow
+imageio
 
 # MongoDB bağlantısı
-pymongo==4.7.1
+pymongo
 
 # Belge metin çıkarma
-unstructured==0.14.5
+unstructured

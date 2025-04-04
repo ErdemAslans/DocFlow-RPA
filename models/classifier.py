@@ -77,7 +77,8 @@ class DocumentClassifier:
         
         try:
             # Model state_dict'ini yükle
-            checkpoint = torch.load(model_path, map_location=self.device)
+            checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
+
 
             # Geçici bir model oluştur
             temp_model = SwinForImageClassification.from_pretrained(

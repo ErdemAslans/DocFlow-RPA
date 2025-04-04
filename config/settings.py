@@ -33,7 +33,8 @@ LLM_CONFIG = {
 
 # OCR ayarları
 OCR_CONFIG = {
-    'timeout': 60
+    'timeout': 60,
+    'tesseract_path': r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 }
 
 # MongoDB ayarları

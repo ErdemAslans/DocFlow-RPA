@@ -1,0 +1,49 @@
+// DocumentRouting.drl
+package com.mercedes.documentprocessing;
+
+import com.mercedes.documentprocessing.Document;
+
+// Temel kural: Her belgeyi kendi sınıfına ait klasöre yönlendir
+rule "Belge Yönlendirme - Genel Kural"
+when
+    $doc : Document()
+then
+    System.out.println("Belge işleniyor: " + $doc.getFileName());
+    $doc.setTargetFolder($doc.getDocumentClass());
+    System.out.println("Yönlendirme: " + $doc.getFileName() + " -> " + $doc.getTargetFolder());
+end
+
+// Güven skoru düşük belgeler için farklı yönlendirme
+rule "Düşük Güven Skoru Kontrolü"
+when
+    $doc : Document(confidence < 0.75)
+then
+    System.out.println("Düşük güven skoru tespit edildi: " + $doc.getConfidence());
+    $doc.setNeedsReview(true);
+    $doc.setTargetFolder("review");
+end
+
+// Boş metin içeren belgeleri kontrol et
+rule "Metin Eksikliği Kontrolü"
+when
+    $doc : Document(textLength < 50)
+then
+    System.out.println("Az veya eksik metin tespit edildi: " + $doc.getFileName() + ", Karakter: " + $doc.getTextLength());
+    $doc.setOcrFailed(true);
+    $doc.setTargetFolder("ocr_failed");
+end
+
+// 1. Mektup (Letter) belgeleri için kurallar
+rule "Mektup İşleme"
+when
+    $doc : Document(documentClass == "letter", confidence >= 0.75)
+then
+    System.out.println("Mektup belgesi tespit edildi: " + $doc.getFileName());
+    $doc.setTargetFolder("letter");
+    // Buraya mektuplara özel işlemler eklenebilir
+end
+
+// Burada diğer belge türleri için kurallar devam eder
+// 2. Form belgeleri için kurallar...
+// 3. E-posta belgeleri için kurallar...
+// ve diğerleri için...
