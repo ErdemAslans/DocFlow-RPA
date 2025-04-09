@@ -1,5 +1,5 @@
 """
-Belge metin çıkarma modülleri.
+Belge metin çıkarma modülleri - EasyOCR Entegrasyonu.
 """
 import os
 import time
@@ -7,35 +7,40 @@ import threading
 from queue import Queue
 from PIL import Image
 import numpy as np
-
-# Önce Tesseract yapılandırması
-import pytesseract
-# Tesseract yolunu direkt olarak belirleyin
-tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-pytesseract.pytesseract.tesseract_cmd = tesseract_path
+import easyocr  # Yeni eklenen import
 
 from config.settings import OCR_CONFIG, TEMP_DIR
 
 class UnstructuredTextExtractor:
     def __init__(self, timeout=None):
         """
-        Belgelerden metin çıkarmak için sınıf.
+        Belgelerden metin çıkarmak için EasyOCR tabanlı sınıf.
         
         Args:
             timeout (int, optional): Metin çıkarma işlemi için maksimum süre (saniye). 
                                      Varsayılan OCR_CONFIG['timeout'].
         """
-        print("Metin çıkarıcı başlatılıyor...")
+        print("EasyOCR tabanlı metin çıkarıcı başlatılıyor...")
         self.timeout = timeout or OCR_CONFIG['timeout']
-        # Tesseract yolunu kontrol et
-        if os.path.exists(tesseract_path):
-            print(f"Tesseract OCR bulundu: {tesseract_path}")
-        else:
-            print(f"UYARI: Tesseract OCR bulunamadı: {tesseract_path}")
+        
+        # EasyOCR okuyucusu oluştur - dil listesini ayarlamalar dosyasından al
+        self.languages = OCR_CONFIG.get('languages', ['tr', 'en'])
+        print(f"EasyOCR dilleri: {self.languages}")
+        
+        try:
+            # EasyOCR reader'ı GPU kullanılabilirse GPU ile başlat
+            self.reader = easyocr.Reader(
+                self.languages, 
+                gpu=OCR_CONFIG.get('use_gpu', True)
+            )
+            print(f"EasyOCR başarıyla başlatıldı: {self.languages} dilleri için.")
+        except Exception as e:
+            print(f"UYARI: EasyOCR başlatılamadı: {e}")
+            self.reader = None
 
     def extract_text(self, document_path):
         """
-        Belge dosyasından metin çıkarma işlemi.
+        Belge dosyasından metin çıkarma işlemi - EasyOCR ile.
         Güvenlik için zaman aşımı ve hata yönetimi eklenmiştir.
         
         Args:
@@ -51,95 +56,92 @@ class UnstructuredTextExtractor:
             try:
                 # Hata ayıklama için başlangıç zamanı
                 start_time = time.time()
-                print(f"Metin çıkarma başlıyor: {document_path}")
+                print(f"EasyOCR ile metin çıkarma başlıyor: {document_path}")
 
                 # Belgenin uzantısını kontrol et
                 ext = os.path.splitext(document_path)[1].lower()
+                
+                # EasyOCR reader kontrol
+                if self.reader is None:
+                    print("EasyOCR başlatılmamış, metin çıkarma atlanıyor")
+                    result_queue.put({
+                        'text': "[EasyOCR başlatılmamış]",
+                        'metadata': {
+                            'error': "reader_not_initialized",
+                            'file_path': document_path
+                        }
+                    })
+                    return
 
-                # TIF dosyalarına özel işlem
-                if ext in ['.tif', '.tiff']:
+                # PDF veya TIF dosyalarını işle
+                if ext in ['.pdf', '.tif', '.tiff']:
                     try:
-                        # TIF dosyasını PIL ile açıp geçici bir JPEG olarak kaydet
-                        print(f"TIF dosyası işleniyor: {document_path}")
+                        # Görüntüyü PIL ile aç (PDF ise ilk sayfası alınır)
+                        print(f"{ext.upper()} dosyası işleniyor: {document_path}")
+                        
+                        # PDF dosyası için
+                        if ext == '.pdf':
+                            import pdf2image
+                            pages = pdf2image.convert_from_path(document_path, dpi=300)
+                            
+                            all_text = []
+                            for i, img in enumerate(pages):
+                                print(f"PDF sayfa {i+1}/{len(pages)} işleniyor...")
+                                # EasyOCR ile OCR uygula
+                                results = self.reader.readtext(np.array(img))
+                                page_text = ' '.join([text for _, text, _ in results])
+                                all_text.append(page_text)
+                            
+                            # Tüm sayfaları birleştir
+                            text = '\n\n'.join(all_text)
+                            print(f"PDF OCR tamamlandı. Metin uzunluğu: {len(text)} karakter")
+                            
+                        # TIF/TIFF dosyası için
+                        else:
+                            img = Image.open(document_path)
+                            img_array = np.array(img)
+                            
+                            # Çok sayfalı TIF için
+                            if hasattr(img, 'n_frames') and img.n_frames > 1:
+                                all_text = []
+                                for i in range(img.n_frames):
+                                    print(f"TIF sayfa {i+1}/{img.n_frames} işleniyor...")
+                                    img.seek(i)
+                                    img_array = np.array(img)
+                                    results = self.reader.readtext(img_array)
+                                    page_text = ' '.join([text for _, text, _ in results])
+                                    all_text.append(page_text)
+                                
+                                text = '\n\n'.join(all_text)
+                            else:
+                                # Tek sayfalı TIF
+                                results = self.reader.readtext(img_array)
+                                text = ' '.join([text for _, text, _ in results])
+                            
+                            print(f"TIF OCR tamamlandı. Metin uzunluğu: {len(text)} karakter")
+                    
+                    except Exception as e:
+                        print(f"{ext.upper()} işleme hatası: {e}")
+                        text = f"[OCR hatası: {str(e)}]"
+                
+                # Diğer görüntü formatları için doğrudan işle
+                elif ext in ['.jpg', '.jpeg', '.png', '.bmp']:
+                    try:
                         img = Image.open(document_path)
-
-                        # Geçici jpeg dosyası oluştur
-                        temp_jpg = os.path.join(TEMP_DIR, os.path.basename(document_path) + "_temp.jpg")
-                        img = img.convert('RGB')
-                        img.save(temp_jpg)
-                        print(f"Geçici JPEG oluşturuldu: {temp_jpg}")
-
-                        # Pytesseract ile doğrudan OCR uygula
-                        try:
-                            text = pytesseract.image_to_string(img)
-                            print(f"Pytesseract ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
-                            
-                            # Geçici dosyayı temizle
-                            try:
-                                os.remove(temp_jpg)
-                            except:
-                                pass
-                        except Exception as e:
-                            print(f"Pytesseract OCR hatası: {e}")
-                            # Unstructured ile dene
-                            try:
-                                from unstructured.partition.auto import partition
-                                from unstructured.staging.base import elements_to_text
-
-                                print("Unstructured ile ayrıştırma başlıyor...")
-                                elements = partition(temp_jpg)
-                                text = elements_to_text(elements)
-                                print(f"Unstructured ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
-
-                                # Geçici dosyayı temizle
-                                try:
-                                    os.remove(temp_jpg)
-                                except:
-                                    pass
-                            except ImportError:
-                                print("Unstructured paketi kurulu değil, OCR atlanıyor")
-                                text = "[OCR paketi bulunamadı]"
-                                elements = []
-                            except Exception as e:
-                                print(f"Unstructured OCR hatası: {e}")
-                                text = f"[OCR hatası: {str(e)}]"
-                                elements = []
-                            
+                        img_array = np.array(img)
+                        
+                        results = self.reader.readtext(img_array)
+                        text = ' '.join([text for _, text, _ in results])
+                        print(f"Görüntü OCR tamamlandı. Metin uzunluğu: {len(text)} karakter")
+                    
                     except Exception as e:
-                        print(f"TIF işleme hatası: {e}")
-                        text = f"[TIF işleme hatası: {str(e)}]"
-                        elements = []
+                        print(f"Görüntü işleme hatası: {e}")
+                        text = f"[Görüntü işleme hatası: {str(e)}]"
+                
+                # Desteklenmeyen dosya formatları
                 else:
-                    # Diğer dosya türleri için doğrudan işle
-                    try:
-                        # Önce pytesseract ile dene
-                        try:
-                            img = Image.open(document_path).convert('RGB')
-                            text = pytesseract.image_to_string(img)
-                            print(f"Pytesseract ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
-                        except Exception as e:
-                            print(f"Pytesseract OCR hatası: {e}")
-                            # Unstructured ile dene
-                            try:
-                                from unstructured.partition.auto import partition
-                                from unstructured.staging.base import elements_to_text
-
-                                print("Unstructured ile ayrıştırma başlıyor...")
-                                elements = partition(document_path)
-                                text = elements_to_text(elements)
-                                print(f"Unstructured ile OCR yapıldı. Metin uzunluğu: {len(text)} karakter")
-                            except ImportError:
-                                print("Unstructured paketi kurulu değil, OCR atlanıyor")
-                                text = "[OCR paketi bulunamadı]"
-                                elements = []
-                            except Exception as e:
-                                print(f"Unstructured OCR hatası: {e}")
-                                text = f"[OCR hatası: {str(e)}]"
-                                elements = []
-                    except Exception as e:
-                        print(f"Dosya işleme hatası: {e}")
-                        text = f"[Dosya işleme hatası: {str(e)}]"
-                        elements = []
+                    print(f"Desteklenmeyen dosya formatı: {ext}")
+                    text = f"[Desteklenmeyen dosya formatı: {ext}]"
 
                 # İşlem süresini kontrol et
                 elapsed_time = time.time() - start_time
@@ -149,9 +151,10 @@ class UnstructuredTextExtractor:
                 result_queue.put({
                     'text': text,
                     'metadata': {
-                        'num_elements': 0,  # Şu an için önemli değil
+                        'num_characters': len(text),
                         'processing_time': elapsed_time,
-                        'file_path': document_path
+                        'file_path': document_path,
+                        'ocr_engine': 'EasyOCR'
                     }
                 })
 

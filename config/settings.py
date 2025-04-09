@@ -34,7 +34,9 @@ LLM_CONFIG = {
 # OCR ayarları
 OCR_CONFIG = {
     'timeout': 60,
-    'tesseract_path': r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    'languages': ['tr', 'en'],  # EasyOCR dil listesi (Türkçe ve İngilizce)
+    'use_gpu': True,          # GPU kullanımı
+    'tesseract_path': r"C:\Program Files\Tesseract-OCR\tesseract.exe"  # Uyumluluk için tutulan eski değer
 }
 
 # MongoDB ayarları
@@ -42,6 +44,14 @@ MONGODB_CONFIG = {
     'uri': "mongodb://localhost:27017/",
     'db_name': "document_db",
     'collection_name': "processed_documents"
+}
+
+VECTORDB_CONFIG = {
+    'uri': "localhost:19530",
+    'collection_name': "document_vectors",
+    'model_name': "all-MiniLM-L6-v2",  # SentenceTransformer modeli
+    'nlist': 128,  # IVF indeksi için küme sayısı
+    'nprobe': 10,  # Arama sırasında kontrol edilecek küme sayısı
 }
 
 # Geçici dosyalar için dizin

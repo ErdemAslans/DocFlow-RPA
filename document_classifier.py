@@ -17,6 +17,7 @@ import argparse
 import traceback
 import logging
 from datetime import datetime
+from utils.vector_db import DocumentVectorDB
 
 # Proje dizinini Python modül yoluna ekle
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -31,7 +32,7 @@ from utils.helpers import process_single_document, save_result_to_json, format_r
 from utils.mongodb_client import MongoDBClient
 from config.settings import MODEL_PATH
 
-# Logları stderr'e gönder, stdout yalnızca JSON sonuç için
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -43,7 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger('DocumentClassifier')
 
 
-def process_document(file_path, mode="full", mongo_uri=None):
+def process_document(file_path, mode="full", mongo_uri=None,use_vector_db=True):
     """
     Belgeyi işle ve sonuçları döndür
     
@@ -54,6 +55,7 @@ def process_document(file_path, mode="full", mongo_uri=None):
                    "extract"  - sınıflandırma ve metin çıkarma
                    "full"     - (LLM analizi kapalı, ancak metin çıkarma + sınıflandırma)
         mongo_uri (str, optional): MongoDB URI (belirtilirse sonuçlar MongoDB'ye kaydedilir)
+        use_vector_db (bool): Vektör veritabanı kullanılacak mı
     
     Returns:
         dict: İşleme sonuçları (JSON serileştirilebilir biçimde)
@@ -62,7 +64,7 @@ def process_document(file_path, mode="full", mongo_uri=None):
         start_time = datetime.now()
         logger.info(f"Belge işleme başlatılıyor: {file_path}, Mod: {mode}")
         
-        # Dosyanın var olup olmadığını kontrol et
+        
         if not os.path.exists(file_path):
             error_msg = f"Dosya bulunamadı: {file_path}"
             logger.error(error_msg)
@@ -72,20 +74,31 @@ def process_document(file_path, mode="full", mongo_uri=None):
                 "file_path": file_path
             }
         
-        # 1) Sınıflandırıcı ve metin çıkarıcı başlat
+        
         classifier = DocumentClassifier(model_path=MODEL_PATH)
         extractor = UnstructuredTextExtractor()
         
-        # 2) LLM analiz aşaması kapalı, bu nedenle analyzer = None ve skip_analysis=True
+        
+        vector_db = None
+        if use_vector_db:
+            try:
+                vector_db = DocumentVectorDB()
+                logger.info("Vektör veritabanı başlatıldı")
+            except Exception as e:
+                logger.error(f"Vektör veritabanı başlatma hatası: {e}")
+        
+        # Belgeyi işle
         result = process_single_document(
             file_path,
             classifier=classifier,
             extractor=extractor,
             analyzer=None,
-            skip_analysis=True
+            vector_db=vector_db,
+            skip_analysis=True,
+            check_duplicates=use_vector_db
         )
         
-        # 3) MongoDB'ye kaydet (istenirse)
+        
         if mongo_uri:
             try:
                 mongo_doc = format_result_for_mongodb(result)
@@ -140,6 +153,7 @@ def main():
                         help="İşleme modu: classify, extract veya full")
     parser.add_argument("--output", help="Sonuçları JSON dosyasına yazılacak dosya yolu (stdout yerine)")
     parser.add_argument("--save_to_mongo", help="MongoDB bağlantı URI'si (belirtilirse sonuçlar MongoDB'ye de kaydedilir)")
+    parser.add_argument("--use_vector_db", action="store_true", help="Vektör veritabanını kullan")
     parser.add_argument("--verbose", action="store_true", help="Detaylı log çıktısı (stderr'e)")
 
     args = parser.parse_args()
@@ -149,7 +163,7 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
     
     # Belgeyi işle
-    result = process_document(args.file, args.mode, args.save_to_mongo)
+    result = process_document(args.file, args.mode, args.save_to_mongo, args.use_vector_db) 
     
     # Sonucu JSON olarak çıktıla
     if args.output:

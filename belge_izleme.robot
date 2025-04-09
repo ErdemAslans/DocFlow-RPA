@@ -169,8 +169,8 @@ Process Document
     # Dosya adını ve timestamp'i al
     ${filename_only}=    Get File Name    ${document_path}
     ${timestamp}=    Get Current Date    result_format=%Y%m%d_%H%M%S
-    ${result}=    Run Process    python    ${PYTHON_SCRIPT}    --file    ${document_path}    --mode    full    --save_to_mongo    ${mongo_uri}    env:PYTHONIOENCODING=utf-8    shell=True    stdout=${TEMPDIR}${/}stdout.txt    stderr=${TEMPDIR}${/}stderr.txt
     
+    ${result}=    Run Process    python    ${PYTHON_SCRIPT}    --file    ${document_path}    --mode    full    --use_vector_db    --save_to_mongo    ${mongo_uri}    env:PYTHONIOENCODING=utf-8    shell=True    stdout=${TEMPDIR}${/}stdout.txt    stderr=${TEMPDIR}${/}stderr.txt
     # Latin-1 kodlaması kullan
     ${stdout}=    Get File    ${TEMPDIR}${/}stdout.txt    encoding=latin-1
     ${stderr}=    Get File    ${TEMPDIR}${/}stderr.txt    encoding=latin-1

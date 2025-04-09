@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('DocumentProcessor')
 
-def process_single_document(document_path, classifier, extractor, analyzer=None, skip_analysis=False):
+def process_single_document(document_path, classifier, extractor, analyzer=None, vector_db=None, skip_analysis=False, check_duplicates=True):
     """
     Tek bir belgeyi işle ve sonuçları döndür
     
@@ -27,7 +27,9 @@ def process_single_document(document_path, classifier, extractor, analyzer=None,
         classifier: DocumentClassifier nesnesi
         extractor: UnstructuredTextExtractor nesnesi
         analyzer (optional): DocumentAnalyzer nesnesi
+        vector_db (optional): DocumentVectorDB nesnesi
         skip_analysis (bool): İçerik analizi atlanacak mı
+        check_duplicates (bool): Duplikasyon kontrolü yapılacak mı
         
     Returns:
         dict: İşleme sonuçları
@@ -67,6 +69,23 @@ def process_single_document(document_path, classifier, extractor, analyzer=None,
 
         text_length = len(extraction_result['text'])
         logger.info(f"Çıkarılan metin uzunluğu: {text_length} karakter")
+
+        # Duplikasyon kontrolü (opsiyonel)
+        if vector_db and check_duplicates and text_length > 50:
+            try:
+                duplicate_check = vector_db.check_duplicate_document(
+                    extraction_result['text'],
+                    min_similarity=0.95  # %95 benzerlik eşiği
+                )
+                results['duplicate_check'] = duplicate_check
+                
+                if duplicate_check["is_duplicate"]:
+                    logger.warning(f"DİKKAT: Bu belge muhtemelen sistemde zaten var!")
+                    logger.warning(f"Benzerlik: {duplicate_check['similarity']:.2f}, Tip: {duplicate_check['match_type']}")
+                    logger.warning(f"Duplike belge yolu: {duplicate_check['file_path']}")
+            except Exception as e:
+                logger.error(f"Duplikasyon kontrolü hatası: {e}")
+                results['duplicate_check'] = {"error": str(e)}
 
     except Exception as e:
         logger.error(f"Metin çıkarma hatası: {e}")
@@ -111,6 +130,32 @@ def process_single_document(document_path, classifier, extractor, analyzer=None,
     }
     
     logger.info(f"Belge işleme tamamlandı. Süre: {processing_time:.2f} saniye.")
+
+    # Vektör veritabanına ekleme işlemi
+    if vector_db and text_length > 50 and results['classification']['confidence'] > 0.5:
+        try:
+            import time
+            doc_id = f"{os.path.basename(document_path)}_{int(time.time())}"
+            
+            # Duplikasyon kontrolü yaptıysak ve duplikasyon varsa ekleme yapma
+            should_add = True
+            if check_duplicates and results.get('duplicate_check', {}).get('is_duplicate', False):
+                should_add = False
+                logger.info(f"Belge duplike olduğu için vektör veritabanına eklenmedi: {doc_id}")
+            
+            if should_add:
+                vector_db.add_document(
+                    doc_id=doc_id,
+                    doc_class=results['classification']['class'],
+                    file_path=document_path,
+                    text_content=results['extraction']['text'],
+                    processed_date=results['processing_info']['end_time']
+                )
+                results['vector_indexing'] = {"status": "indexed", "doc_id": doc_id}
+                logger.info(f"Belge vektör veritabanına eklendi, ID: {doc_id}")
+        except Exception as e:
+            logger.error(f"Vektör veritabanı ekleme hatası: {e}")
+            results['vector_indexing'] = {"status": "error", "error": str(e)}
 
     return results
 
